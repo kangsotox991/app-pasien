@@ -2,7 +2,7 @@
 """
 Excel Logbook Editor
 Desktop application untuk membaca dan menyimpan file Excel.
-Fitur: buka file, import data pasien, rename sheet otomatis sesuai tanggal,
+Fitur: buka file, import data pasien, proses data otomatis,
        pengisian otomatis no CM, tanggal, dan alat medis EKG.
 """
 
@@ -64,7 +64,7 @@ class ExcelEditorApp:
 
         tools_menu = tk.Menu(menubar, tearoff=0)
         tools_menu.add_command(label="Load Data Pasien...", command=self.load_data_pasien)
-        tools_menu.add_command(label="Proses Data & Rename Sheets", command=self.rename_sheets_from_data)
+        tools_menu.add_command(label="Proses Data", command=self.proses_data)
         menubar.add_cascade(label="Tools", menu=tools_menu)
 
         self.root.config(menu=menubar)
@@ -82,7 +82,7 @@ class ExcelEditorApp:
         ttk.Button(toolbar, text="Simpan Sebagai", command=self.save_as).pack(side=tk.LEFT, padx=2)
         ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
         ttk.Button(toolbar, text="Load Data Pasien", command=self.load_data_pasien).pack(side=tk.LEFT, padx=2)
-        ttk.Button(toolbar, text="Proses & Rename", command=self.rename_sheets_from_data).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Proses Data", command=self.proses_data).pack(side=tk.LEFT, padx=2)
 
         self.file_label = ttk.Label(toolbar, text="Belum ada file dibuka", foreground="gray")
         self.file_label.pack(side=tk.RIGHT, padx=8)
@@ -272,8 +272,8 @@ class ExcelEditorApp:
         ttk.Label(win, text=(
             "Paste data pasien di bawah, atau load dari file .txt.\n"
             "Format per baris: DD/MM/YYYY Nama No. Reg XXXXXXX dx: diagnosa\n\n"
-            "Data akan disimpan di memori. Untuk proses dan rename sheet,\n"
-            "gunakan tombol 'Proses & Rename' di toolbar atau menu Tools."
+            "Data akan disimpan di memori. Untuk proses data,\n"
+            "gunakan tombol 'Proses Data' di toolbar atau menu Tools."
         ), justify=tk.LEFT, foreground="gray").pack(padx=16, anchor="w")
 
         # Load from file button
@@ -366,7 +366,7 @@ class ExcelEditorApp:
                 "Sukses",
                 f"Data pasien berhasil dimuat!\n"
                 f"{len(dates)} tanggal, {total} pasien.\n\n"
-                f"Untuk proses dan rename sheet, klik 'Proses & Rename' di toolbar.",
+                f"Untuk proses data, klik 'Proses Data' di toolbar.",
                 parent=win
             )
             win.destroy()
@@ -375,14 +375,14 @@ class ExcelEditorApp:
         ttk.Button(btn_frame, text="Simpan Data", command=do_load).pack(side=tk.RIGHT, padx=4)
         ttk.Button(btn_frame, text="Batal", command=win.destroy).pack(side=tk.RIGHT, padx=4)
 
-    # ------------------------------------------------------------------ PROSES DATA & RENAME SHEETS
+    # ------------------------------------------------------------------ PROSES DATA
     # Template row constants (row indices in template sheet)
     TEMPLATE_DATA_START = 16   # first data row (Briefing)
     TEMPLATE_DATA_END = 22     # last data row (alat medis)
     TEMPLATE_ITEMS = 7         # number of items per table (rows 16-22)
     GAP_ROWS = 2               # empty rows between tables
 
-    def rename_sheets_from_data(self):
+    def proses_data(self):
         """Fill data pasien ke dalam sheet template, semua tanggal dalam 1 sheet."""
         if not self.workbook:
             messagebox.showwarning("Peringatan", "Buka file Excel terlebih dahulu")
