@@ -579,7 +579,7 @@ class ExcelEditorApp:
         # Write NB row
         nb_row = total_row + 2
         ws.cell(row=nb_row, column=1).value = "NB"
-        ws.cell(row=nb_row, column=2).value = f"1 Perawat {total_patients} Pasien"
+        ws.cell(row=nb_row, column=2).value = "1 Perawat 4 Pasien"
 
         # Write formula row
         formula_row = nb_row + 1
