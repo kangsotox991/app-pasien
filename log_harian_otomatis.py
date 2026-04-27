@@ -2,7 +2,8 @@
 """
 Excel Logbook Editor
 Desktop application untuk membaca dan menyimpan file Excel.
-Fitur: buka file, import data pasien, rename sheet otomatis sesuai tanggal, simpan.
+Fitur: buka file, import data pasien, rename sheet otomatis sesuai tanggal,
+       pengisian otomatis no CM, tanggal, dan alat medis EKG.
 """
 
 import os
@@ -10,6 +11,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import re
 from collections import OrderedDict
+from datetime import datetime
 import io
 
 try:
@@ -62,7 +64,7 @@ class ExcelEditorApp:
 
         tools_menu = tk.Menu(menubar, tearoff=0)
         tools_menu.add_command(label="Load Data Pasien...", command=self.load_data_pasien)
-        tools_menu.add_command(label="Rename Sheets dari Data", command=self.rename_sheets_from_data)
+        tools_menu.add_command(label="Proses Data & Rename Sheets", command=self.rename_sheets_from_data)
         menubar.add_cascade(label="Tools", menu=tools_menu)
 
         self.root.config(menu=menubar)
@@ -80,7 +82,7 @@ class ExcelEditorApp:
         ttk.Button(toolbar, text="Simpan Sebagai", command=self.save_as).pack(side=tk.LEFT, padx=2)
         ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
         ttk.Button(toolbar, text="Load Data Pasien", command=self.load_data_pasien).pack(side=tk.LEFT, padx=2)
-        ttk.Button(toolbar, text="Rename Sheets", command=self.rename_sheets_from_data).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Proses & Rename", command=self.rename_sheets_from_data).pack(side=tk.LEFT, padx=2)
 
         self.file_label = ttk.Label(toolbar, text="Belum ada file dibuka", foreground="gray")
         self.file_label.pack(side=tk.RIGHT, padx=8)
@@ -259,7 +261,7 @@ class ExcelEditorApp:
 
     # ------------------------------------------------------------------ LOAD DATA PASIEN
     def load_data_pasien(self):
-        """Load patient data from .txt file or paste — only loads into memory, does NOT rename."""
+        """Load patient data from .txt file or paste — only loads into memory."""
         win = tk.Toplevel(self.root)
         win.title("Load Data Pasien")
         win.geometry("750x650")
@@ -270,8 +272,8 @@ class ExcelEditorApp:
         ttk.Label(win, text=(
             "Paste data pasien di bawah, atau load dari file .txt.\n"
             "Format per baris: DD/MM/YYYY Nama No. Reg XXXXXXX dx: diagnosa\n\n"
-            "Data akan disimpan di memori. Untuk rename sheet,\n"
-            "gunakan tombol 'Rename Sheets' di toolbar atau menu Tools."
+            "Data akan disimpan di memori. Untuk proses dan rename sheet,\n"
+            "gunakan tombol 'Proses & Rename' di toolbar atau menu Tools."
         ), justify=tk.LEFT, foreground="gray").pack(padx=16, anchor="w")
 
         # Load from file button
@@ -364,7 +366,7 @@ class ExcelEditorApp:
                 "Sukses",
                 f"Data pasien berhasil dimuat!\n"
                 f"{len(dates)} tanggal, {total} pasien.\n\n"
-                f"Untuk rename sheet, klik tombol 'Rename Sheets' di toolbar.",
+                f"Untuk proses dan rename sheet, klik 'Proses & Rename' di toolbar.",
                 parent=win
             )
             win.destroy()
@@ -373,9 +375,9 @@ class ExcelEditorApp:
         ttk.Button(btn_frame, text="Simpan Data", command=do_load).pack(side=tk.RIGHT, padx=4)
         ttk.Button(btn_frame, text="Batal", command=win.destroy).pack(side=tk.RIGHT, padx=4)
 
-    # ------------------------------------------------------------------ RENAME SHEETS FROM DATA
+    # ------------------------------------------------------------------ PROSES DATA & RENAME SHEETS
     def rename_sheets_from_data(self):
-        """Rename sheets based on loaded patient data — triggered via menu/toolbar."""
+        """Copy template sheet per tanggal, isi data pasien, dan rename."""
         if not self.workbook:
             messagebox.showwarning("Peringatan", "Buka file Excel terlebih dahulu")
             return
@@ -394,47 +396,51 @@ class ExcelEditorApp:
 
         dates = list(groups.keys())
         total = sum(len(v) for v in groups.values())
-        sheet_count = len(self.workbook.sheetnames)
 
-        # Confirm before renaming
+        # Use first sheet as template
+        template_ws = self.workbook.worksheets[0]
+        template_name = template_ws.title
+
+        # Confirm before processing
         msg = (
             f"Data: {len(dates)} tanggal, {total} pasien\n"
-            f"Sheet tersedia: {sheet_count}\n"
+            f"Template sheet: '{template_name}'\n\n"
+            f"Akan dibuat {len(dates)} sheet baru dari template,\n"
+            f"diisi data pasien otomatis, dan di-rename sesuai tanggal.\n\n"
+            f"Lanjutkan?"
         )
-        if len(dates) > sheet_count:
-            msg += f"\n{len(dates) - sheet_count} sheet baru akan dibuat dari copy sheet terakhir.\n"
-        msg += "\nLanjutkan rename sheet?"
-
-        if not messagebox.askyesno("Konfirmasi Rename", msg):
+        if not messagebox.askyesno("Konfirmasi Proses", msg):
             return
 
-        new_sheets = 0
-
-        # If more dates than sheets, copy last sheet for extras (including images)
-        if len(dates) > sheet_count:
-            extra = len(dates) - sheet_count
-            last_ws = self.workbook.worksheets[-1]
-            for j in range(extra):
-                new_ws = self.workbook.copy_worksheet(last_ws)
-                new_ws.title = f"Sheet{sheet_count + j + 1}"
-                self._copy_images(last_ws, new_ws)
-            new_sheets = extra
-
-        # Track used names to avoid duplicates
-        used_names = set()
+        # Create copies of template for each date
         for i, date_key in enumerate(dates):
             day, month, year = date_key
+            patients = groups[date_key]
+
+            # Copy template sheet
+            new_ws = self.workbook.copy_worksheet(template_ws)
+            self._copy_images(template_ws, new_ws)
+
+            # Rename sheet
             sheet_name = f"{day} {BULAN_INDO[month]}"
             sheet_name = re.sub(r'[\\/*?\[\]:]', '', sheet_name)[:31]
 
-            # Handle duplicate names (same day+month from different years)
-            if sheet_name in used_names:
+            # Handle duplicate names
+            existing = [ws.title for ws in self.workbook.worksheets]
+            if sheet_name in existing:
                 sheet_name = f"{day} {BULAN_INDO[month]} {year}"
                 sheet_name = re.sub(r'[\\/*?\[\]:]', '', sheet_name)[:31]
-            used_names.add(sheet_name)
+            new_ws.title = sheet_name
 
-            ws = self.workbook.worksheets[i]
-            ws.title = sheet_name
+            # Fill patient data into the sheet
+            self._fill_sheet_data(new_ws, date_key, patients)
+
+        # Remove original template sheets (the ones that were there before)
+        original_sheets = list(self.workbook.worksheets[:len(self.workbook.sheetnames) - len(dates)])
+        for ws in original_sheets:
+            # Only remove if it's one of the original template sheets
+            if ws.title in [s.title for s in self.workbook.worksheets[:len(self.workbook.sheetnames) - len(dates)]]:
+                self.workbook.remove(ws)
 
         self.modified = True
         self.status_label.config(text="Belum disimpan", foreground="orange")
@@ -442,11 +448,70 @@ class ExcelEditorApp:
         self._render_tabs()
         self._render_table()
 
-        msg = f"Berhasil rename {len(dates)} sheet sesuai tanggal!"
-        if new_sheets > 0:
-            msg += f"\n({new_sheets} sheet baru dibuat dari copy sheet terakhir)"
+        messagebox.showinfo(
+            "Sukses",
+            f"Berhasil memproses {len(dates)} sheet!\n"
+            f"Data pasien telah diisi otomatis (no CM, tanggal, alat medis)."
+        )
 
-        messagebox.showinfo("Sukses", msg)
+    def _fill_sheet_data(self, ws, date_key, patients):
+        """Fill patient data into a sheet.
+
+        1. Tanggal di kolom B sebelah Briefing (row 16)
+        2. No. Reg di belakang teks 'no CM'
+        3. No. Reg pasien EKG terakhir di belakang teks alat medis
+        """
+        day, month, year = date_key
+
+        # Build date object for the date cell
+        date_obj = datetime(year, month, day)
+
+        # Extract No. Reg from each patient line
+        reg_numbers = []
+        last_ekg_reg = None
+        for patient_line in patients:
+            reg_match = re.search(r'No\.\s*Reg\s+(\d+)', patient_line)
+            if reg_match:
+                reg_num = reg_match.group(1)
+                reg_numbers.append(reg_num)
+                # Check if this patient has EKG in diagnosis
+                if 'ekg' in patient_line.lower():
+                    last_ekg_reg = reg_num
+
+        reg_list_str = ", ".join(reg_numbers)
+        max_col = ws.max_column or 1
+        max_row = min(ws.max_row or 1, 40)
+
+        # Scan all cells to find and fill data
+        for row in range(1, max_row + 1):
+            for col in range(1, max_col + 1):
+                val = ws.cell(row=row, column=col).value
+                if val is None or not isinstance(val, str):
+                    continue
+
+                # 1. Fill "no CM" cells with No. Reg list
+                if val.rstrip().endswith("no CM"):
+                    ws.cell(row=row, column=col).value = (
+                        f"{val} {reg_list_str}."
+                    )
+
+                # 2. Fill alat medis (syrenge) cell with last EKG patient's No. Reg
+                if "agar siap pakai dengan" in val.lower():
+                    if last_ekg_reg:
+                        ws.cell(row=row, column=col).value = (
+                            f"{val.rstrip()} {last_ekg_reg}."
+                        )
+
+        # 3. Fill tanggal di kolom sebelah Briefing
+        for row in range(1, max_row + 1):
+            for col in range(1, max_col + 1):
+                val = ws.cell(row=row, column=col).value
+                if val is None:
+                    continue
+                if isinstance(val, str) and val.strip().lower() == "briefing":
+                    # Tanggal is in the column before Briefing (col - 1)
+                    if col > 1:
+                        ws.cell(row=row, column=col - 1).value = date_obj
 
     def _parse_patient_data(self, raw_text):
         """Parse patient data text and group by date.
