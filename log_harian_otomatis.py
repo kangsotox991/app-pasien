@@ -376,8 +376,14 @@ class ExcelEditorApp:
         ttk.Button(btn_frame, text="Batal", command=win.destroy).pack(side=tk.RIGHT, padx=4)
 
     # ------------------------------------------------------------------ PROSES DATA & RENAME SHEETS
+    # Template row constants (row indices in template sheet)
+    TEMPLATE_DATA_START = 16   # first data row (Briefing)
+    TEMPLATE_DATA_END = 22     # last data row (alat medis)
+    TEMPLATE_ITEMS = 7         # number of items per table (rows 16-22)
+    GAP_ROWS = 2               # empty rows between tables
+
     def rename_sheets_from_data(self):
-        """Copy template sheet per tanggal, isi data pasien, dan rename."""
+        """Fill data pasien ke dalam sheet template, semua tanggal dalam 1 sheet."""
         if not self.workbook:
             messagebox.showwarning("Peringatan", "Buka file Excel terlebih dahulu")
             return
@@ -395,52 +401,22 @@ class ExcelEditorApp:
             return
 
         dates = list(groups.keys())
-        total = sum(len(v) for v in groups.values())
+        total_patients = sum(len(v) for v in groups.values())
 
-        # Use first sheet as template
         template_ws = self.workbook.worksheets[0]
         template_name = template_ws.title
 
-        # Confirm before processing
         msg = (
-            f"Data: {len(dates)} tanggal, {total} pasien\n"
+            f"Data: {len(dates)} tanggal, {total_patients} pasien\n"
             f"Template sheet: '{template_name}'\n\n"
-            f"Akan dibuat {len(dates)} sheet baru dari template,\n"
-            f"diisi data pasien otomatis, dan di-rename sesuai tanggal.\n\n"
+            f"Semua tanggal akan ditulis dalam 1 sheet,\n"
+            f"diisi data pasien otomatis, nomor urut lanjut.\n\n"
             f"Lanjutkan?"
         )
         if not messagebox.askyesno("Konfirmasi Proses", msg):
             return
 
-        # Create copies of template for each date
-        for i, date_key in enumerate(dates):
-            day, month, year = date_key
-            patients = groups[date_key]
-
-            # Copy template sheet
-            new_ws = self.workbook.copy_worksheet(template_ws)
-            self._copy_images(template_ws, new_ws)
-
-            # Rename sheet
-            sheet_name = f"{day} {BULAN_INDO[month]}"
-            sheet_name = re.sub(r'[\\/*?\[\]:]', '', sheet_name)[:31]
-
-            # Handle duplicate names
-            existing = [ws.title for ws in self.workbook.worksheets]
-            if sheet_name in existing:
-                sheet_name = f"{day} {BULAN_INDO[month]} {year}"
-                sheet_name = re.sub(r'[\\/*?\[\]:]', '', sheet_name)[:31]
-            new_ws.title = sheet_name
-
-            # Fill patient data into the sheet
-            self._fill_sheet_data(new_ws, date_key, patients)
-
-        # Remove original template sheets (the ones that were there before)
-        original_sheets = list(self.workbook.worksheets[:len(self.workbook.sheetnames) - len(dates)])
-        for ws in original_sheets:
-            # Only remove if it's one of the original template sheets
-            if ws.title in [s.title for s in self.workbook.worksheets[:len(self.workbook.sheetnames) - len(dates)]]:
-                self.workbook.remove(ws)
+        self._fill_all_dates(template_ws, groups)
 
         self.modified = True
         self.status_label.config(text="Belum disimpan", foreground="orange")
@@ -450,68 +426,174 @@ class ExcelEditorApp:
 
         messagebox.showinfo(
             "Sukses",
-            f"Berhasil memproses {len(dates)} sheet!\n"
-            f"Data pasien telah diisi otomatis (no CM, tanggal, alat medis)."
+            f"Berhasil memproses {len(dates)} tanggal dalam sheet '{template_ws.title}'!\n"
+            f"Total {total_patients} pasien, nomor urut 1-{len(dates) * self.TEMPLATE_ITEMS}."
         )
 
-    def _fill_sheet_data(self, ws, date_key, patients):
-        """Fill patient data into a sheet.
+    def _fill_all_dates(self, ws, groups):
+        """Write all date blocks into a single sheet.
 
-        1. Tanggal di kolom B sebelah Briefing (row 16)
-        2. No. Reg di belakang teks 'no CM'
-        3. No. Reg pasien EKG terakhir di belakang teks alat medis
+        Structure per date block (7 rows):
+          - Row 1: Briefing (with date in col B)
+          - Row 2: Timbang terima
+          - Rows 3-6: Asuhan keperawatan etc. (with no CM)
+          - Row 7: Alat medis (with EKG No. Reg)
+        Between blocks: 2 empty rows.
+        Numbering continues across blocks (1-7, 8-14, 15-21...).
         """
-        day, month, year = date_key
+        from copy import copy as copy_style
 
-        # Build date object for the date cell
-        date_obj = datetime(year, month, day)
+        # Unmerge cells in the data/total area so we can write freely
+        merged_to_remove = []
+        for merged_range in ws.merged_cells.ranges:
+            if merged_range.min_row >= self.TEMPLATE_DATA_START:
+                merged_to_remove.append(merged_range)
+        for mr in merged_to_remove:
+            ws.unmerge_cells(str(mr))
 
-        # Extract No. Reg from each patient line
-        reg_numbers = []
-        last_ekg_reg = None
-        for patient_line in patients:
-            reg_match = re.search(r'No\.\s*Reg\s+(\d+)', patient_line)
-            if reg_match:
-                reg_num = reg_match.group(1)
-                reg_numbers.append(reg_num)
-                # Check if this patient has EKG in diagnosis
-                if 'ekg' in patient_line.lower():
-                    last_ekg_reg = reg_num
-
-        reg_list_str = ", ".join(reg_numbers)
+        # Read template data rows (16-22) as reference
+        template_rows = []
         max_col = ws.max_column or 1
-        max_row = min(ws.max_row or 1, 40)
-
-        # Scan all cells to find and fill data
-        for row in range(1, max_row + 1):
+        for src_row in range(self.TEMPLATE_DATA_START, self.TEMPLATE_DATA_END + 1):
+            row_data = []
             for col in range(1, max_col + 1):
-                val = ws.cell(row=row, column=col).value
-                if val is None or not isinstance(val, str):
-                    continue
+                cell = ws.cell(row=src_row, column=col)
+                row_data.append({
+                    'value': cell.value,
+                    'font': copy_style(cell.font),
+                    'border': copy_style(cell.border),
+                    'fill': copy_style(cell.fill),
+                    'alignment': copy_style(cell.alignment),
+                    'number_format': cell.number_format,
+                })
+            template_rows.append(row_data)
 
-                # 1. Fill "no CM" cells with No. Reg list
-                if val.rstrip().endswith("no CM"):
-                    ws.cell(row=row, column=col).value = (
-                        f"{val} {reg_list_str}."
-                    )
+        # Read template row heights
+        template_heights = {}
+        for src_row in range(self.TEMPLATE_DATA_START, self.TEMPLATE_DATA_END + 1):
+            h = ws.row_dimensions[src_row].height
+            template_heights[src_row - self.TEMPLATE_DATA_START] = h
 
-                # 2. Fill alat medis (syrenge) cell with last EKG patient's No. Reg
-                if "agar siap pakai dengan" in val.lower():
-                    if last_ekg_reg:
-                        ws.cell(row=row, column=col).value = (
-                            f"{val.rstrip()} {last_ekg_reg}."
-                        )
+        # First table starts at row 16 (template data start)
+        current_row = self.TEMPLATE_DATA_START
+        running_number = 1
+        first_data_row = current_row
+        dates = list(groups.keys())
 
-        # 3. Fill tanggal di kolom sebelah Briefing
-        for row in range(1, max_row + 1):
+        for date_idx, date_key in enumerate(dates):
+            day, month, year = date_key
+            patients = groups[date_key]
+            date_obj = datetime(year, month, day)
+
+            # Extract No. Reg and EKG info
+            reg_numbers = []
+            last_ekg_reg = None
+            for patient_line in patients:
+                reg_match = re.search(r'No\.\s*Reg\s+(\d+)', patient_line)
+                if reg_match:
+                    reg_num = reg_match.group(1)
+                    reg_numbers.append(reg_num)
+                    if 'ekg' in patient_line.lower():
+                        last_ekg_reg = reg_num
+            reg_list_str = ", ".join(reg_numbers)
+
+            # Write 7 data rows for this date
+            for item_idx in range(self.TEMPLATE_ITEMS):
+                dest_row = current_row + item_idx
+                tmpl = template_rows[item_idx]
+
+                # Set row height from template
+                if item_idx in template_heights and template_heights[item_idx]:
+                    ws.row_dimensions[dest_row].height = template_heights[item_idx]
+
+                for col in range(1, max_col + 1):
+                    dest_cell = ws.cell(row=dest_row, column=col)
+                    src_data = tmpl[col - 1]
+
+                    # Copy formatting
+                    dest_cell.font = copy_style(src_data['font'])
+                    dest_cell.border = copy_style(src_data['border'])
+                    dest_cell.fill = copy_style(src_data['fill'])
+                    dest_cell.alignment = copy_style(src_data['alignment'])
+                    dest_cell.number_format = src_data['number_format']
+
+                    val = src_data['value']
+
+                    # Column A: sequential number
+                    if col == 1:
+                        dest_cell.value = running_number + item_idx
+                        continue
+
+                    # Column B: date on first row (Briefing), empty on others
+                    if col == 2:
+                        if item_idx == 0:
+                            dest_cell.value = date_obj
+                        else:
+                            dest_cell.value = None
+                        continue
+
+                    # Column G: formula =SUM(E*F) adjusted for current row
+                    if col == 7 and isinstance(val, str) and val.startswith('='):
+                        dest_cell.value = f"=SUM(E{dest_row}*F{dest_row})"
+                        continue
+
+                    # Column D: fill "no CM" and "alat medis" text
+                    if col == 4 and isinstance(val, str):
+                        if val.rstrip().endswith("no CM"):
+                            dest_cell.value = f"{val} {reg_list_str}."
+                            continue
+                        if "agar siap pakai dengan" in val.lower():
+                            if last_ekg_reg:
+                                dest_cell.value = f"{val.rstrip()} {last_ekg_reg}."
+                            else:
+                                dest_cell.value = val
+                            continue
+
+                    # Default: copy value as-is
+                    dest_cell.value = val
+
+            running_number += self.TEMPLATE_ITEMS
+            current_row += self.TEMPLATE_ITEMS
+
+            # Add gap rows between tables (not after last)
+            if date_idx < len(dates) - 1:
+                current_row += self.GAP_ROWS
+
+        # Write Total row after all data
+        last_data_row = current_row - 1
+        total_row = current_row + 1
+        ws.cell(row=total_row, column=1).value = "Total "
+        total_formula = f"=SUM(G{first_data_row}:G{last_data_row})"
+        ws.cell(row=total_row, column=7).value = total_formula
+
+        # Copy Total row formatting from template row 31
+        for col in range(1, max_col + 1):
+            src_cell = ws.cell(row=31, column=col)
+            if total_row != 31:
+                dest_cell = ws.cell(row=total_row, column=col)
+                dest_cell.font = copy_style(src_cell.font)
+                dest_cell.border = copy_style(src_cell.border)
+                dest_cell.fill = copy_style(src_cell.fill)
+                dest_cell.alignment = copy_style(src_cell.alignment)
+
+        # Write NB row
+        nb_row = total_row + 2
+        ws.cell(row=nb_row, column=1).value = "NB"
+        ws.cell(row=nb_row, column=2).value = f"1 Perawat {total_patients} Pasien"
+
+        # Write formula row
+        formula_row = nb_row + 1
+        ws.cell(row=formula_row, column=7).value = f"=G{total_row}"
+        ws.cell(row=formula_row, column=8).value = 20
+        ws.cell(row=formula_row, column=9).value = f"=G{formula_row}*H{formula_row}"
+        ws.cell(row=formula_row, column=10).value = f"=I{formula_row}/60"
+
+        # Clear old template rows that are below our data (rows 23-34 from original)
+        # Only needed if our data ends before the old template area
+        clear_start = max(formula_row + 1, self.TEMPLATE_DATA_END + 1)
+        for row in range(clear_start, 35):
             for col in range(1, max_col + 1):
-                val = ws.cell(row=row, column=col).value
-                if val is None:
-                    continue
-                if isinstance(val, str) and val.strip().lower() == "briefing":
-                    # Tanggal is in the column before Briefing (col - 1)
-                    if col > 1:
-                        ws.cell(row=row, column=col - 1).value = date_obj
+                ws.cell(row=row, column=col).value = None
 
     def _parse_patient_data(self, raw_text):
         """Parse patient data text and group by date.
