@@ -416,7 +416,42 @@ class ExcelEditorApp:
         if not messagebox.askyesno("Konfirmasi Proses", msg):
             return
 
-        self._fill_all_dates(template_ws, groups)
+        # Show progress window
+        progress_win = tk.Toplevel(self.root)
+        progress_win.title("Memproses Data...")
+        progress_win.geometry("400x150")
+        progress_win.transient(self.root)
+        progress_win.grab_set()
+        progress_win.resizable(False, False)
+
+        ttk.Label(
+            progress_win, text="Memproses data pasien...",
+            font=("Segoe UI", 11, "bold")
+        ).pack(pady=(16, 4))
+
+        progress_label = ttk.Label(progress_win, text="Persiapan...", foreground="gray")
+        progress_label.pack(pady=(0, 8))
+
+        progress_bar = ttk.Progressbar(
+            progress_win, orient=tk.HORIZONTAL, length=350, mode='determinate'
+        )
+        progress_bar.pack(padx=20, pady=(0, 16))
+        progress_bar['maximum'] = len(dates)
+
+        self.root.update_idletasks()
+
+        def on_progress(date_idx, date_key):
+            day, month, year = date_key
+            progress_bar['value'] = date_idx + 1
+            pct = int((date_idx + 1) / len(dates) * 100)
+            progress_label.config(
+                text=f"Tanggal {day} {BULAN_INDO[month]} ({date_idx + 1}/{len(dates)}) — {pct}%"
+            )
+            self.root.update_idletasks()
+
+        self._fill_all_dates(template_ws, groups, on_progress)
+
+        progress_win.destroy()
 
         self.modified = True
         self.status_label.config(text="Belum disimpan", foreground="orange")
@@ -430,7 +465,7 @@ class ExcelEditorApp:
             f"Total {total_patients} pasien, nomor urut 1-{len(dates) * self.TEMPLATE_ITEMS}."
         )
 
-    def _fill_all_dates(self, ws, groups):
+    def _fill_all_dates(self, ws, groups, progress_callback=None):
         """Write all date blocks into a single sheet.
 
         Structure per date block (7 rows):
@@ -481,6 +516,9 @@ class ExcelEditorApp:
         dates = list(groups.keys())
 
         for date_idx, date_key in enumerate(dates):
+            if progress_callback:
+                progress_callback(date_idx, date_key)
+
             day, month, year = date_key
             patients = groups[date_key]
             date_obj = datetime(year, month, day)
