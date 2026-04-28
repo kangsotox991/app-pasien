@@ -625,16 +625,17 @@ class ExcelEditorApp:
                         dest_cell.value = f"=SUM(E{dest_row}*F{dest_row})"
                         continue
 
-                    # Column D: fill "no CM" and "alat medis" text
-                    if col == 4 and isinstance(val, str):
-                        if val.rstrip().endswith("no CM"):
+                    # Column D: fill "no CM" (items 2-5) and "alat medis" (item 6)
+                    if col == 4:
+                        if item_idx in (2, 3, 4, 5) and isinstance(val, str) and val.rstrip().endswith("no CM"):
                             dest_cell.value = f"{val} {reg_list_str}."
                             continue
-                        if "agar siap pakai dengan" in val.lower():
+                        if item_idx == 6:
+                            base_text = "Menyiapkan alat medis ( syrenge Pump ) agar siap pakai dengan"
                             if last_ekg_reg:
-                                dest_cell.value = f"{val.rstrip()} No.Reg {last_ekg_reg}."
+                                dest_cell.value = f"{base_text} No.Reg {last_ekg_reg}."
                             else:
-                                dest_cell.value = val
+                                dest_cell.value = f"{base_text}."
                             continue
 
                     # Column J: only copy on first date block
