@@ -453,6 +453,11 @@ class ExcelEditorApp:
 
         self._fill_all_dates(template_ws, groups, on_progress)
 
+        # Remove all sheets except the template (Terampil)
+        sheets_to_remove = [s for s in self.workbook.sheetnames if s != template_name]
+        for name in sheets_to_remove:
+            del self.workbook[name]
+
         progress_win.destroy()
 
         self.modified = True
