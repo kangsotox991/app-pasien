@@ -19,7 +19,7 @@ try:
     from openpyxl.utils import get_column_letter
     from openpyxl.drawing.image import Image as XlImage
     from openpyxl.drawing.spreadsheet_drawing import TwoCellAnchor, OneCellAnchor, AnchorMarker
-    from openpyxl.styles import PatternFill, Alignment
+    from openpyxl.styles import PatternFill, Alignment, Border, Side
 except ImportError:
     import subprocess, sys
     subprocess.check_call([sys.executable, "-m", "pip", "install", "openpyxl"])
@@ -27,7 +27,7 @@ except ImportError:
     from openpyxl.utils import get_column_letter
     from openpyxl.drawing.image import Image as XlImage
     from openpyxl.drawing.spreadsheet_drawing import TwoCellAnchor, OneCellAnchor, AnchorMarker
-    from openpyxl.styles import PatternFill, Alignment
+    from openpyxl.styles import PatternFill, Alignment, Border, Side
 
 BULAN_INDO = {
     1: "Januari", 2: "Februari", 3: "Maret", 4: "April",
@@ -676,22 +676,24 @@ class ExcelEditorApp:
             dest_cell.alignment = copy_style(fmt['alignment'])
             dest_cell.value = None
 
-        # Write Total row
+        # Write Total row — apply borders BEFORE merge
         total_row = sep_row + 1
-        ws.merge_cells(start_row=total_row, start_column=1, end_row=total_row, end_column=6)
-        ws.cell(row=total_row, column=1).value = "Total"
-        ws.cell(row=total_row, column=1).alignment = Alignment(horizontal='center', vertical='center')
-        total_formula = f"=SUM(G{first_data_row}:G{last_data_row})"
-        ws.cell(row=total_row, column=7).value = total_formula
-
-        # Copy Total row formatting from saved template row 31 format
+        thin_side = Side(style='thin')
+        total_border = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
         for col in range(1, max_col + 1):
             dest_cell = ws.cell(row=total_row, column=col)
             fmt = total_row_format[col - 1]
             dest_cell.font = copy_style(fmt['font'])
-            dest_cell.border = copy_style(fmt['border'])
+            dest_cell.border = total_border if col <= 9 else copy_style(fmt['border'])
             dest_cell.fill = copy_style(fmt['fill'])
             dest_cell.alignment = Alignment(horizontal='center', vertical='center') if col <= 6 else copy_style(fmt['alignment'])
+
+        ws.merge_cells(start_row=total_row, start_column=1, end_row=total_row, end_column=6)
+        ws.cell(row=total_row, column=1).value = "Total"
+        ws.cell(row=total_row, column=1).alignment = Alignment(horizontal='center', vertical='center')
+        ws.cell(row=total_row, column=1).border = total_border
+        total_formula = f"=SUM(G{first_data_row}:G{last_data_row})"
+        ws.cell(row=total_row, column=7).value = total_formula
 
         # Write NB row
         nb_row = total_row + 2
