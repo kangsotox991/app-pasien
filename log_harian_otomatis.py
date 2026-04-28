@@ -509,7 +509,33 @@ class ExcelEditorApp:
             h = ws.row_dimensions[src_row].height
             template_heights[src_row - self.TEMPLATE_DATA_START] = h
 
-        # Clear original template summary rows (Total/NB/formula at rows 31-34)
+        # Read gap row formatting from template (rows 23-24)
+        gap_start = self.TEMPLATE_DATA_END + 1  # row 23
+        gap_row_formats = []
+        for gap_idx in range(self.GAP_ROWS):
+            gap_row_data = []
+            for col in range(1, max_col + 1):
+                cell = ws.cell(row=gap_start + gap_idx, column=col)
+                gap_row_data.append({
+                    'font': copy_style(cell.font),
+                    'border': copy_style(cell.border),
+                    'fill': copy_style(cell.fill),
+                    'alignment': copy_style(cell.alignment),
+                })
+            gap_row_formats.append(gap_row_data)
+
+        # Read Total row formatting from template row 31
+        total_row_format = []
+        for col in range(1, max_col + 1):
+            cell = ws.cell(row=31, column=col)
+            total_row_format.append({
+                'font': copy_style(cell.font),
+                'border': copy_style(cell.border),
+                'fill': copy_style(cell.fill),
+                'alignment': copy_style(cell.alignment),
+            })
+
+        # Clear original template summary rows (Total/NB/formula at rows 23-34)
         for row in range(self.TEMPLATE_DATA_END + 1, 35):
             for col in range(1, max_col + 1):
                 ws.cell(row=row, column=col).value = None
@@ -622,6 +648,16 @@ class ExcelEditorApp:
 
             # Add gap rows between tables (not after last)
             if date_idx < len(dates) - 1:
+                for gap_idx in range(self.GAP_ROWS):
+                    gap_row = current_row + gap_idx
+                    for col in range(1, max_col + 1):
+                        dest_cell = ws.cell(row=gap_row, column=col)
+                        fmt = gap_row_formats[gap_idx][col - 1]
+                        dest_cell.font = copy_style(fmt['font'])
+                        dest_cell.border = copy_style(fmt['border'])
+                        dest_cell.fill = copy_style(fmt['fill'])
+                        dest_cell.alignment = copy_style(fmt['alignment'])
+                        dest_cell.value = None
                 current_row += self.GAP_ROWS
 
         # Write Total row after all data
@@ -631,15 +667,14 @@ class ExcelEditorApp:
         total_formula = f"=SUM(G{first_data_row}:G{last_data_row})"
         ws.cell(row=total_row, column=7).value = total_formula
 
-        # Copy Total row formatting from template row 31
+        # Copy Total row formatting from saved template row 31 format
         for col in range(1, max_col + 1):
-            src_cell = ws.cell(row=31, column=col)
-            if total_row != 31:
-                dest_cell = ws.cell(row=total_row, column=col)
-                dest_cell.font = copy_style(src_cell.font)
-                dest_cell.border = copy_style(src_cell.border)
-                dest_cell.fill = copy_style(src_cell.fill)
-                dest_cell.alignment = copy_style(src_cell.alignment)
+            dest_cell = ws.cell(row=total_row, column=col)
+            fmt = total_row_format[col - 1]
+            dest_cell.font = copy_style(fmt['font'])
+            dest_cell.border = copy_style(fmt['border'])
+            dest_cell.fill = copy_style(fmt['fill'])
+            dest_cell.alignment = copy_style(fmt['alignment'])
 
         # Write NB row
         nb_row = total_row + 2
