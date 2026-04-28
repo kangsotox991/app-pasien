@@ -549,7 +549,6 @@ class ExcelEditorApp:
 
         # First table starts at row 16 (template data start)
         current_row = self.TEMPLATE_DATA_START
-        running_number = 1
         first_data_row = current_row
         dates = list(groups.keys())
 
@@ -613,7 +612,7 @@ class ExcelEditorApp:
 
                     # Column A: sequential number
                     if col == 1:
-                        dest_cell.value = running_number + item_idx
+                        dest_cell.value = item_idx + 1
                         continue
 
                     # Column B: date on first row (Briefing), empty on others
@@ -660,7 +659,7 @@ class ExcelEditorApp:
                     # Default: copy value as-is
                     dest_cell.value = val
 
-            running_number += self.TEMPLATE_ITEMS
+
             current_row += self.TEMPLATE_ITEMS
 
             # Add gap row between tables (not after last)
