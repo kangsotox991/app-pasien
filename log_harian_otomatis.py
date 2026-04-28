@@ -19,6 +19,7 @@ try:
     from openpyxl.utils import get_column_letter
     from openpyxl.drawing.image import Image as XlImage
     from openpyxl.drawing.spreadsheet_drawing import TwoCellAnchor, OneCellAnchor, AnchorMarker
+    from openpyxl.styles import PatternFill
 except ImportError:
     import subprocess, sys
     subprocess.check_call([sys.executable, "-m", "pip", "install", "openpyxl"])
@@ -26,6 +27,7 @@ except ImportError:
     from openpyxl.utils import get_column_letter
     from openpyxl.drawing.image import Image as XlImage
     from openpyxl.drawing.spreadsheet_drawing import TwoCellAnchor, OneCellAnchor, AnchorMarker
+    from openpyxl.styles import PatternFill
 
 BULAN_INDO = {
     1: "Januari", 2: "Februari", 3: "Maret", 4: "April",
@@ -380,7 +382,7 @@ class ExcelEditorApp:
     TEMPLATE_DATA_START = 16   # first data row (Briefing)
     TEMPLATE_DATA_END = 22     # last data row (alat medis)
     TEMPLATE_ITEMS = 7         # number of items per table (rows 16-22)
-    GAP_ROWS = 2               # empty rows between tables
+    GAP_ROWS = 1               # separator row between tables
 
     def proses_data(self):
         """Fill data pasien ke dalam sheet template, semua tanggal dalam 1 sheet."""
@@ -646,16 +648,17 @@ class ExcelEditorApp:
             running_number += self.TEMPLATE_ITEMS
             current_row += self.TEMPLATE_ITEMS
 
-            # Add gap rows between tables (not after last)
+            # Add gap row between tables (not after last)
             if date_idx < len(dates) - 1:
+                gap_fill = PatternFill(start_color='D9D9D9', end_color='D9D9D9', fill_type='solid')
                 for gap_idx in range(self.GAP_ROWS):
                     gap_row = current_row + gap_idx
                     for col in range(1, max_col + 1):
                         dest_cell = ws.cell(row=gap_row, column=col)
-                        fmt = gap_row_formats[gap_idx][col - 1]
+                        fmt = gap_row_formats[min(gap_idx, len(gap_row_formats) - 1)][col - 1]
                         dest_cell.font = copy_style(fmt['font'])
                         dest_cell.border = copy_style(fmt['border'])
-                        dest_cell.fill = copy_style(fmt['fill'])
+                        dest_cell.fill = gap_fill
                         dest_cell.alignment = copy_style(fmt['alignment'])
                         dest_cell.value = None
                 current_row += self.GAP_ROWS
