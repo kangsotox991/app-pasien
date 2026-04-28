@@ -658,7 +658,7 @@ class ExcelEditorApp:
                         fmt = gap_row_formats[min(gap_idx, len(gap_row_formats) - 1)][col - 1]
                         dest_cell.font = copy_style(fmt['font'])
                         dest_cell.border = copy_style(fmt['border'])
-                        dest_cell.fill = gap_fill
+                        dest_cell.fill = gap_fill if col <= 9 else copy_style(fmt['fill'])
                         dest_cell.alignment = copy_style(fmt['alignment'])
                         dest_cell.value = None
                 current_row += self.GAP_ROWS
