@@ -525,15 +525,31 @@ class ExcelEditorApp:
 
             # Extract No. Reg and EKG info
             reg_numbers = []
+            ekg_regs = []
             last_ekg_reg = None
             for patient_line in patients:
                 reg_match = re.search(r'No\.\s*Reg\s+(\d+)', patient_line)
                 if reg_match:
                     reg_num = reg_match.group(1)
-                    reg_numbers.append(reg_num)
-                    if 'ekg' in patient_line.lower():
+                    has_ekg = 'ekg' in patient_line.lower()
+                    reg_numbers.append((reg_num, has_ekg))
+                    if has_ekg:
+                        ekg_regs.append(reg_num)
                         last_ekg_reg = reg_num
-            reg_list_str = ", ".join(reg_numbers)
+
+            # Limit to 4 No. Reg: prioritize EKG patients, then take last non-EKG
+            if len(reg_numbers) > 4:
+                ekg_items = [(r, e) for r, e in reg_numbers if e]
+                non_ekg_items = [(r, e) for r, e in reg_numbers if not e]
+                remaining = 4 - len(ekg_items)
+                if remaining > 0:
+                    selected = ekg_items + non_ekg_items[-remaining:]
+                else:
+                    selected = ekg_items[-4:]
+                selected_regs = [r for r, _ in selected]
+            else:
+                selected_regs = [r for r, _ in reg_numbers]
+            reg_list_str = ", ".join(selected_regs)
 
             # Write 7 data rows for this date
             for item_idx in range(self.TEMPLATE_ITEMS):
