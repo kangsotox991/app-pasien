@@ -566,6 +566,7 @@ class ExcelEditorApp:
                     if col == 2:
                         if item_idx == 0:
                             dest_cell.value = date_obj
+                            dest_cell.number_format = 'DD/MM/YYYY'
                         else:
                             dest_cell.value = None
                         continue
