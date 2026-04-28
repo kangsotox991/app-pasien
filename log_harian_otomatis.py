@@ -604,6 +604,11 @@ class ExcelEditorApp:
                                 dest_cell.value = val
                             continue
 
+                    # Column J: only copy on first date block
+                    if col >= 10 and date_idx > 0:
+                        dest_cell.value = None
+                        continue
+
                     # Default: copy value as-is
                     dest_cell.value = val
 
