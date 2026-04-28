@@ -509,6 +509,11 @@ class ExcelEditorApp:
             h = ws.row_dimensions[src_row].height
             template_heights[src_row - self.TEMPLATE_DATA_START] = h
 
+        # Clear original template summary rows (Total/NB/formula at rows 31-34)
+        for row in range(self.TEMPLATE_DATA_END + 1, 35):
+            for col in range(1, max_col + 1):
+                ws.cell(row=row, column=col).value = None
+
         # First table starts at row 16 (template data start)
         current_row = self.TEMPLATE_DATA_START
         running_number = 1
@@ -648,10 +653,8 @@ class ExcelEditorApp:
         ws.cell(row=formula_row, column=9).value = f"=G{formula_row}*H{formula_row}"
         ws.cell(row=formula_row, column=10).value = f"=I{formula_row}/60"
 
-        # Clear old template rows that are below our data (rows 23-34 from original)
-        # Only needed if our data ends before the old template area
-        clear_start = max(formula_row + 1, self.TEMPLATE_DATA_END + 1)
-        for row in range(clear_start, 35):
+        # Clear any leftover rows between last data and summary rows
+        for row in range(current_row, total_row):
             for col in range(1, max_col + 1):
                 ws.cell(row=row, column=col).value = None
 
