@@ -628,12 +628,21 @@ class ExcelEditorApp:
                     # Column D: append No. Reg data from patient records
                     if col == 4 and isinstance(val, str):
                         stripped = val.rstrip()
+                        # Items with "no CM" → append 4 patient reg numbers
                         if stripped.endswith("no CM"):
-                            dest_cell.value = f"{val} {reg_list_str}."
+                            dest_cell.value = f"{stripped} {reg_list_str}."
                             continue
+                        # Item with "No.Reg" → append 1 EKG reg number
                         if stripped.endswith("No.Reg"):
                             if last_ekg_reg:
                                 dest_cell.value = f"{stripped} {last_ekg_reg}."
+                            else:
+                                dest_cell.value = f"{stripped}."
+                            continue
+                        # Fallback: old template ends with "dengan" (no "No.Reg")
+                        if "agar siap pakai dengan" in stripped.lower():
+                            if last_ekg_reg:
+                                dest_cell.value = f"{stripped} No.Reg {last_ekg_reg}."
                             else:
                                 dest_cell.value = f"{stripped}."
                             continue
