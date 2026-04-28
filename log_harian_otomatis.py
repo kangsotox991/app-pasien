@@ -632,7 +632,7 @@ class ExcelEditorApp:
                             continue
                         if "agar siap pakai dengan" in val.lower():
                             if last_ekg_reg:
-                                dest_cell.value = f"{val.rstrip()} {last_ekg_reg}."
+                                dest_cell.value = f"{val.rstrip()} No.Reg {last_ekg_reg}."
                             else:
                                 dest_cell.value = val
                             continue
