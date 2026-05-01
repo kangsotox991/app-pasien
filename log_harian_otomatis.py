@@ -574,15 +574,16 @@ class ExcelEditorApp:
                         ekg_regs.append(reg_num)
                         last_ekg_reg = reg_num
 
-            # Limit to 4 No. Reg: prioritize EKG patients, then take last non-EKG
-            if len(reg_numbers) > 4:
+            # Limit to 3 No. Reg for "no CM": prioritize EKG, then last non-EKG
+            max_cm = 3
+            if len(reg_numbers) > max_cm:
                 ekg_items = [(r, e) for r, e in reg_numbers if e]
                 non_ekg_items = [(r, e) for r, e in reg_numbers if not e]
-                remaining = 4 - len(ekg_items)
+                remaining = max_cm - len(ekg_items)
                 if remaining > 0:
                     selected = ekg_items + non_ekg_items[-remaining:]
                 else:
-                    selected = ekg_items[-4:]
+                    selected = ekg_items[-max_cm:]
                 selected_regs = [r for r, _ in selected]
             else:
                 selected_regs = [r for r, _ in reg_numbers]
