@@ -741,6 +741,12 @@ class ExcelEditorApp:
         if total_rows > last_used_row:
             ws.delete_rows(last_used_row + 1, total_rows - last_used_row)
 
+        # Remove unused columns beyond the table (col K = 11 is last used)
+        last_used_col = 11
+        total_cols = ws.max_column or last_used_col
+        if total_cols > last_used_col:
+            ws.delete_cols(last_used_col + 1, total_cols - last_used_col)
+
     def _parse_patient_data(self, raw_text):
         """Parse patient data text and group by date.
         Returns OrderedDict: {(day, month, year): [lines...]}
