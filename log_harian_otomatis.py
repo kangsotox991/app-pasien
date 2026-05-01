@@ -35,6 +35,11 @@ BULAN_INDO = {
     9: "September", 10: "Oktober", 11: "November", 12: "Desember"
 }
 
+HARI_INDO = {
+    0: "Senin", 1: "Selasa", 2: "Rabu", 3: "Kamis",
+    4: "Jumat", 5: "Sabtu", 6: "Minggu"
+}
+
 
 class ExcelEditorApp:
     def __init__(self, root):
@@ -493,6 +498,17 @@ class ExcelEditorApp:
         for mr in merged_to_remove:
             ws.unmerge_cells(str(mr))
 
+        # Insert "Hari" column after Tanggal (column B) → new column C
+        ws.insert_cols(3)
+        ws.cell(row=13, column=3).value = "Hari"
+        # Copy header formatting from column B header
+        header_cell = ws.cell(row=13, column=2)
+        hari_header = ws.cell(row=13, column=3)
+        hari_header.font = copy_style(header_cell.font)
+        hari_header.border = copy_style(header_cell.border)
+        hari_header.fill = copy_style(header_cell.fill)
+        hari_header.alignment = copy_style(header_cell.alignment)
+
         # Read template data rows (16-22) as reference
         template_rows = []
         max_col = ws.max_column or 1
@@ -625,15 +641,23 @@ class ExcelEditorApp:
                             dest_cell.value = None
                         continue
 
-                    # Column G: formula =SUM(E*F) adjusted for current row
-                    if col == 7 and isinstance(val, str) and val.startswith('='):
-                        dest_cell.value = f"=SUM(E{dest_row}*F{dest_row})"
+                    # Column C: day name on first row, empty on others
+                    if col == 3:
+                        if item_idx == 0:
+                            dest_cell.value = HARI_INDO.get(date_obj.weekday(), '')
+                        else:
+                            dest_cell.value = None
                         continue
 
-                    # Column D: append No. Reg data from patient records
-                    if col == 4 and isinstance(val, str):
+                    # Column H: formula =SUM(F*G) adjusted for current row
+                    if col == 8 and isinstance(val, str) and val.startswith('='):
+                        dest_cell.value = f"=SUM(F{dest_row}*G{dest_row})"
+                        continue
+
+                    # Column E: append No. Reg data from patient records
+                    if col == 5 and isinstance(val, str):
                         stripped = val.rstrip()
-                        # Items with "no CM" → append 4 patient reg numbers
+                        # Items with "no CM" → append 3 patient reg numbers
                         if stripped.endswith("no CM"):
                             dest_cell.value = f"{stripped} {reg_list_str}."
                             continue
@@ -652,8 +676,8 @@ class ExcelEditorApp:
                                 dest_cell.value = f"{stripped}."
                             continue
 
-                    # Column J: only copy on first date block
-                    if col >= 10 and date_idx > 0:
+                    # Column K: only copy on first date block
+                    if col >= 11 and date_idx > 0:
                         dest_cell.value = None
                         continue
 
@@ -673,7 +697,7 @@ class ExcelEditorApp:
                         fmt = gap_row_formats[min(gap_idx, len(gap_row_formats) - 1)][col - 1]
                         dest_cell.font = copy_style(fmt['font'])
                         dest_cell.border = copy_style(fmt['border'])
-                        dest_cell.fill = gap_fill if col <= 9 else copy_style(fmt['fill'])
+                        dest_cell.fill = gap_fill if col <= 10 else copy_style(fmt['fill'])
                         dest_cell.alignment = copy_style(fmt['alignment'])
                         dest_cell.value = None
                 current_row += self.GAP_ROWS
@@ -687,7 +711,7 @@ class ExcelEditorApp:
             fmt = gap_row_formats[0][col - 1]
             dest_cell.font = copy_style(fmt['font'])
             dest_cell.border = copy_style(fmt['border'])
-            dest_cell.fill = gap_fill if col <= 9 else copy_style(fmt['fill'])
+            dest_cell.fill = gap_fill if col <= 10 else copy_style(fmt['fill'])
             dest_cell.alignment = copy_style(fmt['alignment'])
             dest_cell.value = None
 
@@ -699,16 +723,16 @@ class ExcelEditorApp:
             dest_cell = ws.cell(row=total_row, column=col)
             fmt = total_row_format[col - 1]
             dest_cell.font = copy_style(fmt['font'])
-            dest_cell.border = total_border if col <= 9 else copy_style(fmt['border'])
+            dest_cell.border = total_border if col <= 10 else copy_style(fmt['border'])
             dest_cell.fill = copy_style(fmt['fill'])
-            dest_cell.alignment = Alignment(horizontal='center', vertical='center') if col <= 6 else copy_style(fmt['alignment'])
+            dest_cell.alignment = Alignment(horizontal='center', vertical='center') if col <= 7 else copy_style(fmt['alignment'])
 
-        ws.merge_cells(start_row=total_row, start_column=1, end_row=total_row, end_column=6)
+        ws.merge_cells(start_row=total_row, start_column=1, end_row=total_row, end_column=7)
         ws.cell(row=total_row, column=1).value = "Total"
         ws.cell(row=total_row, column=1).alignment = Alignment(horizontal='center', vertical='center')
         ws.cell(row=total_row, column=1).border = total_border
-        total_formula = f"=SUM(G{first_data_row}:G{last_data_row})"
-        ws.cell(row=total_row, column=7).value = total_formula
+        total_formula = f"=SUM(H{first_data_row}:H{last_data_row})"
+        ws.cell(row=total_row, column=8).value = total_formula
 
         # Write NB row
         nb_row = total_row + 2
@@ -717,10 +741,10 @@ class ExcelEditorApp:
 
         # Write formula row
         formula_row = nb_row + 1
-        ws.cell(row=formula_row, column=7).value = f"=G{total_row}"
-        ws.cell(row=formula_row, column=8).value = 20
-        ws.cell(row=formula_row, column=9).value = f"=G{formula_row}*H{formula_row}"
-        ws.cell(row=formula_row, column=10).value = f"=I{formula_row}/60"
+        ws.cell(row=formula_row, column=8).value = f"=H{total_row}"
+        ws.cell(row=formula_row, column=9).value = 20
+        ws.cell(row=formula_row, column=10).value = f"=H{formula_row}*I{formula_row}"
+        ws.cell(row=formula_row, column=11).value = f"=J{formula_row}/60"
 
     def _parse_patient_data(self, raw_text):
         """Parse patient data text and group by date.
