@@ -735,6 +735,12 @@ class ExcelEditorApp:
         ws.cell(row=formula_row, column=10).value = f"=H{formula_row}*I{formula_row}"
         ws.cell(row=formula_row, column=11).value = f"=J{formula_row}/60"
 
+        # Remove unused rows below the formula row
+        last_used_row = formula_row
+        total_rows = ws.max_row or last_used_row
+        if total_rows > last_used_row:
+            ws.delete_rows(last_used_row + 1, total_rows - last_used_row)
+
     def _parse_patient_data(self, raw_text):
         """Parse patient data text and group by date.
         Returns OrderedDict: {(day, month, year): [lines...]}
