@@ -498,17 +498,6 @@ class ExcelEditorApp:
         for mr in merged_to_remove:
             ws.unmerge_cells(str(mr))
 
-        # Insert "Hari" column after Tanggal (column B) → new column C
-        ws.insert_cols(3)
-        ws.cell(row=13, column=3).value = "Hari"
-        # Copy header formatting from column B header
-        header_cell = ws.cell(row=13, column=2)
-        hari_header = ws.cell(row=13, column=3)
-        hari_header.font = copy_style(header_cell.font)
-        hari_header.border = copy_style(header_cell.border)
-        hari_header.fill = copy_style(header_cell.fill)
-        hari_header.alignment = copy_style(header_cell.alignment)
-
         # Read template data rows (16-22) as reference
         template_rows = []
         max_col = ws.max_column or 1
@@ -547,10 +536,10 @@ class ExcelEditorApp:
                 })
             gap_row_formats.append(gap_row_data)
 
-        # Read Total row formatting from template row 31
+        # Read Total row formatting from template row 24
         total_row_format = []
         for col in range(1, max_col + 1):
-            cell = ws.cell(row=31, column=col)
+            cell = ws.cell(row=24, column=col)
             total_row_format.append({
                 'font': copy_style(cell.font),
                 'border': copy_style(cell.border),
@@ -632,19 +621,19 @@ class ExcelEditorApp:
                         dest_cell.value = item_idx + 1
                         continue
 
-                    # Column B: date on first row (Briefing), empty on others
+                    # Column B: day name on first row, empty on others
                     if col == 2:
                         if item_idx == 0:
-                            dest_cell.value = date_obj
-                            dest_cell.number_format = 'DD/MM/YYYY'
+                            dest_cell.value = HARI_INDO.get(date_obj.weekday(), '')
                         else:
                             dest_cell.value = None
                         continue
 
-                    # Column C: day name on first row, empty on others
+                    # Column C: date on first row (Briefing), empty on others
                     if col == 3:
                         if item_idx == 0:
-                            dest_cell.value = HARI_INDO.get(date_obj.weekday(), '')
+                            dest_cell.value = date_obj
+                            dest_cell.number_format = 'DD/MM/YYYY'
                         else:
                             dest_cell.value = None
                         continue
@@ -737,7 +726,7 @@ class ExcelEditorApp:
         # Write NB row
         nb_row = total_row + 2
         ws.cell(row=nb_row, column=1).value = "NB"
-        ws.cell(row=nb_row, column=2).value = "1 Perawat 4 Pasien"
+        ws.cell(row=nb_row, column=3).value = "1 Perawat 3 Pasien"
 
         # Write formula row
         formula_row = nb_row + 1
