@@ -19,6 +19,7 @@ try:
     from openpyxl.utils import get_column_letter
     from openpyxl.drawing.image import Image as XlImage
     from openpyxl.drawing.spreadsheet_drawing import TwoCellAnchor, OneCellAnchor, AnchorMarker
+    from openpyxl.styles import PatternFill, Alignment, Border, Side
 except ImportError:
     import subprocess, sys
     subprocess.check_call([sys.executable, "-m", "pip", "install", "openpyxl"])
@@ -26,11 +27,17 @@ except ImportError:
     from openpyxl.utils import get_column_letter
     from openpyxl.drawing.image import Image as XlImage
     from openpyxl.drawing.spreadsheet_drawing import TwoCellAnchor, OneCellAnchor, AnchorMarker
+    from openpyxl.styles import PatternFill, Alignment, Border, Side
 
 BULAN_INDO = {
     1: "Januari", 2: "Februari", 3: "Maret", 4: "April",
     5: "Mei", 6: "Juni", 7: "Juli", 8: "Agustus",
     9: "September", 10: "Oktober", 11: "November", 12: "Desember"
+}
+
+HARI_INDO = {
+    0: "Senin", 1: "Selasa", 2: "Rabu", 3: "Kamis",
+    4: "Jumat", 5: "Sabtu", 6: "Minggu"
 }
 
 
@@ -380,7 +387,7 @@ class ExcelEditorApp:
     TEMPLATE_DATA_START = 16   # first data row (Briefing)
     TEMPLATE_DATA_END = 22     # last data row (alat medis)
     TEMPLATE_ITEMS = 7         # number of items per table (rows 16-22)
-    GAP_ROWS = 2               # empty rows between tables
+    GAP_ROWS = 1               # separator row between tables
 
     def proses_data(self):
         """Fill data pasien ke dalam sheet template, semua tanggal dalam 1 sheet."""
@@ -451,6 +458,11 @@ class ExcelEditorApp:
 
         self._fill_all_dates(template_ws, groups, on_progress)
 
+        # Remove all sheets except the template (Terampil)
+        sheets_to_remove = [s for s in self.workbook.sheetnames if s != template_name]
+        for name in sheets_to_remove:
+            del self.workbook[name]
+
         progress_win.destroy()
 
         self.modified = True
@@ -509,9 +521,39 @@ class ExcelEditorApp:
             h = ws.row_dimensions[src_row].height
             template_heights[src_row - self.TEMPLATE_DATA_START] = h
 
+        # Read gap row formatting from template (rows 23-24)
+        gap_start = self.TEMPLATE_DATA_END + 1  # row 23
+        gap_row_formats = []
+        for gap_idx in range(self.GAP_ROWS):
+            gap_row_data = []
+            for col in range(1, max_col + 1):
+                cell = ws.cell(row=gap_start + gap_idx, column=col)
+                gap_row_data.append({
+                    'font': copy_style(cell.font),
+                    'border': copy_style(cell.border),
+                    'fill': copy_style(cell.fill),
+                    'alignment': copy_style(cell.alignment),
+                })
+            gap_row_formats.append(gap_row_data)
+
+        # Read Total row formatting from template row 24
+        total_row_format = []
+        for col in range(1, max_col + 1):
+            cell = ws.cell(row=24, column=col)
+            total_row_format.append({
+                'font': copy_style(cell.font),
+                'border': copy_style(cell.border),
+                'fill': copy_style(cell.fill),
+                'alignment': copy_style(cell.alignment),
+            })
+
+        # Clear original template summary rows (Total/NB/formula at rows 23-34)
+        for row in range(self.TEMPLATE_DATA_END + 1, 35):
+            for col in range(1, max_col + 1):
+                ws.cell(row=row, column=col).value = None
+
         # First table starts at row 16 (template data start)
         current_row = self.TEMPLATE_DATA_START
-        running_number = 1
         first_data_row = current_row
         dates = list(groups.keys())
 
@@ -525,15 +567,32 @@ class ExcelEditorApp:
 
             # Extract No. Reg and EKG info
             reg_numbers = []
+            ekg_regs = []
             last_ekg_reg = None
             for patient_line in patients:
                 reg_match = re.search(r'No\.\s*Reg\s+(\d+)', patient_line)
                 if reg_match:
                     reg_num = reg_match.group(1)
-                    reg_numbers.append(reg_num)
-                    if 'ekg' in patient_line.lower():
+                    has_ekg = 'ekg' in patient_line.lower()
+                    reg_numbers.append((reg_num, has_ekg))
+                    if has_ekg:
+                        ekg_regs.append(reg_num)
                         last_ekg_reg = reg_num
-            reg_list_str = ", ".join(reg_numbers)
+
+            # Limit to 3 No. Reg for "no CM": prioritize EKG, then last non-EKG
+            max_cm = 3
+            if len(reg_numbers) > max_cm:
+                ekg_items = [(r, e) for r, e in reg_numbers if e]
+                non_ekg_items = [(r, e) for r, e in reg_numbers if not e]
+                remaining = max_cm - len(ekg_items)
+                if remaining > 0:
+                    selected = ekg_items + non_ekg_items[-remaining:]
+                else:
+                    selected = ekg_items[-max_cm:]
+                selected_regs = [r for r, _ in selected]
+            else:
+                selected_regs = [r for r, _ in reg_numbers]
+            reg_list_str = ", ".join(selected_regs)
 
             # Write 7 data rows for this date
             for item_idx in range(self.TEMPLATE_ITEMS):
@@ -559,79 +618,122 @@ class ExcelEditorApp:
 
                     # Column A: sequential number
                     if col == 1:
-                        dest_cell.value = running_number + item_idx
+                        dest_cell.value = item_idx + 1
                         continue
 
-                    # Column B: date on first row (Briefing), empty on others
+                    # Column B: day name on first row, empty on others
                     if col == 2:
                         if item_idx == 0:
-                            dest_cell.value = date_obj
+                            dest_cell.value = HARI_INDO.get(date_obj.weekday(), '')
                         else:
                             dest_cell.value = None
                         continue
 
-                    # Column G: formula =SUM(E*F) adjusted for current row
-                    if col == 7 and isinstance(val, str) and val.startswith('='):
-                        dest_cell.value = f"=SUM(E{dest_row}*F{dest_row})"
+                    # Column C: date on first row (Briefing), empty on others
+                    if col == 3:
+                        if item_idx == 0:
+                            dest_cell.value = date_obj
+                            dest_cell.number_format = 'DD/MM/YYYY'
+                        else:
+                            dest_cell.value = None
                         continue
 
-                    # Column D: fill "no CM" and "alat medis" text
-                    if col == 4 and isinstance(val, str):
-                        if val.rstrip().endswith("no CM"):
-                            dest_cell.value = f"{val} {reg_list_str}."
+                    # Column H: formula =SUM(F*G) adjusted for current row
+                    if col == 8 and isinstance(val, str) and val.startswith('='):
+                        dest_cell.value = f"=SUM(F{dest_row}*G{dest_row})"
+                        continue
+
+                    # Column E: append No. Reg data from patient records
+                    if col == 5 and isinstance(val, str):
+                        stripped = val.rstrip()
+                        # Items with "no CM" → append 3 patient reg numbers
+                        if stripped.endswith("no CM"):
+                            dest_cell.value = f"{stripped} {reg_list_str}."
                             continue
-                        if "agar siap pakai dengan" in val.lower():
+                        # Item with "No.Reg" → append 1 EKG reg number
+                        if stripped.endswith("No.Reg"):
                             if last_ekg_reg:
-                                dest_cell.value = f"{val.rstrip()} {last_ekg_reg}."
+                                dest_cell.value = f"{stripped} {last_ekg_reg}."
                             else:
-                                dest_cell.value = val
+                                dest_cell.value = f"{stripped}."
                             continue
+                        # Fallback: old template ends with "dengan" (no "No.Reg")
+                        if "agar siap pakai dengan" in stripped.lower():
+                            if last_ekg_reg:
+                                dest_cell.value = f"{stripped} No.Reg {last_ekg_reg}."
+                            else:
+                                dest_cell.value = f"{stripped}."
+                            continue
+
+                    # Column K: only copy on first date block
+                    if col >= 11 and date_idx > 0:
+                        dest_cell.value = None
+                        continue
 
                     # Default: copy value as-is
                     dest_cell.value = val
 
-            running_number += self.TEMPLATE_ITEMS
+
             current_row += self.TEMPLATE_ITEMS
 
-            # Add gap rows between tables (not after last)
+            # Add gap row between tables (not after last)
             if date_idx < len(dates) - 1:
+                gap_fill = PatternFill(start_color='D9D9D9', end_color='D9D9D9', fill_type='solid')
+                for gap_idx in range(self.GAP_ROWS):
+                    gap_row = current_row + gap_idx
+                    for col in range(1, max_col + 1):
+                        dest_cell = ws.cell(row=gap_row, column=col)
+                        fmt = gap_row_formats[min(gap_idx, len(gap_row_formats) - 1)][col - 1]
+                        dest_cell.font = copy_style(fmt['font'])
+                        dest_cell.border = copy_style(fmt['border'])
+                        dest_cell.fill = gap_fill if col <= 10 else copy_style(fmt['fill'])
+                        dest_cell.alignment = copy_style(fmt['alignment'])
+                        dest_cell.value = None
                 current_row += self.GAP_ROWS
 
-        # Write Total row after all data
+        # Separator row above Total (colored #D9D9D9)
         last_data_row = current_row - 1
-        total_row = current_row + 1
-        ws.cell(row=total_row, column=1).value = "Total "
-        total_formula = f"=SUM(G{first_data_row}:G{last_data_row})"
-        ws.cell(row=total_row, column=7).value = total_formula
-
-        # Copy Total row formatting from template row 31
+        sep_row = current_row
+        gap_fill = PatternFill(start_color='D9D9D9', end_color='D9D9D9', fill_type='solid')
         for col in range(1, max_col + 1):
-            src_cell = ws.cell(row=31, column=col)
-            if total_row != 31:
-                dest_cell = ws.cell(row=total_row, column=col)
-                dest_cell.font = copy_style(src_cell.font)
-                dest_cell.border = copy_style(src_cell.border)
-                dest_cell.fill = copy_style(src_cell.fill)
-                dest_cell.alignment = copy_style(src_cell.alignment)
+            dest_cell = ws.cell(row=sep_row, column=col)
+            fmt = gap_row_formats[0][col - 1]
+            dest_cell.font = copy_style(fmt['font'])
+            dest_cell.border = copy_style(fmt['border'])
+            dest_cell.fill = gap_fill if col <= 10 else copy_style(fmt['fill'])
+            dest_cell.alignment = copy_style(fmt['alignment'])
+            dest_cell.value = None
+
+        # Write Total row — apply borders BEFORE merge
+        total_row = sep_row + 1
+        thin_side = Side(style='thin')
+        total_border = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
+        for col in range(1, max_col + 1):
+            dest_cell = ws.cell(row=total_row, column=col)
+            fmt = total_row_format[col - 1]
+            dest_cell.font = copy_style(fmt['font'])
+            dest_cell.border = total_border if col <= 10 else copy_style(fmt['border'])
+            dest_cell.fill = copy_style(fmt['fill'])
+            dest_cell.alignment = Alignment(horizontal='center', vertical='center') if col <= 7 else copy_style(fmt['alignment'])
+
+        ws.merge_cells(start_row=total_row, start_column=1, end_row=total_row, end_column=7)
+        ws.cell(row=total_row, column=1).value = "Total"
+        ws.cell(row=total_row, column=1).alignment = Alignment(horizontal='center', vertical='center')
+        ws.cell(row=total_row, column=1).border = total_border
+        total_formula = f"=SUM(H{first_data_row}:H{last_data_row})"
+        ws.cell(row=total_row, column=8).value = total_formula
 
         # Write NB row
         nb_row = total_row + 2
         ws.cell(row=nb_row, column=1).value = "NB"
-        ws.cell(row=nb_row, column=2).value = "1 Perawat 4 Pasien"
+        ws.cell(row=nb_row, column=3).value = "1 Perawat 3 Pasien"
 
         # Write formula row
         formula_row = nb_row + 1
-        ws.cell(row=formula_row, column=7).value = f"=G{total_row}"
-        ws.cell(row=formula_row, column=8).value = 20
-        ws.cell(row=formula_row, column=9).value = f"=G{formula_row}*H{formula_row}"
-        ws.cell(row=formula_row, column=10).value = f"=I{formula_row}/60"
-
-        # Clear old template rows that are below our data (rows 23-34 from original)
-        # Only needed if our data ends before the old template area
-        clear_start = max(formula_row + 1, self.TEMPLATE_DATA_END + 1)
-        for row in range(clear_start, 35):
-            for col in range(1, max_col + 1):
-                ws.cell(row=row, column=col).value = None
+        ws.cell(row=formula_row, column=8).value = f"=H{total_row}"
+        ws.cell(row=formula_row, column=9).value = 20
+        ws.cell(row=formula_row, column=10).value = f"=H{formula_row}*I{formula_row}"
+        ws.cell(row=formula_row, column=11).value = f"=J{formula_row}/60"
 
     def _parse_patient_data(self, raw_text):
         """Parse patient data text and group by date.
